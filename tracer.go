@@ -10,5 +10,6 @@ type Tracer interface {
 	Message(string, ...any)
 	Data(any, string, ...any)
 	Error(error, string, ...any)
+
 	Done(string, ...any)
 }
