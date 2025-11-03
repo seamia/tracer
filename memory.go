@@ -11,92 +11,96 @@ import (
 	"time"
 )
 
-type tracerEntry struct {
-	When    time.Time `json:"when"`
-	Message string    `json:"message"`
-	Error   error     `json:"error,omitempty"`
-	Data    []byte    `json:"data,omitempty"`
-}
+type (
+	tracerEntry struct {
+		When     time.Time `json:"when"`
+		Relative int64     `json:"relative.ns"`
+		Message  string    `json:"message"`
+		Error    error     `json:"error,omitempty"`
+		Data     []byte    `json:"data,omitempty"`
+	}
 
-type memoryTracer struct {
-	active  bool
-	depth   int
-	history []tracerEntry
-	guard   sync.Mutex
-	publish func([]byte)
-}
+	traceHistory []tracerEntry
+
+	memoryTracer struct {
+		instance int64
+		depth    int
+		history  traceHistory
+		guard    sync.Mutex
+		publish  func([]byte)
+	}
+)
+
+const (
+	prefixStage   = "STAGE: "
+	prefixMessage = "Msg: "
+	prefixData    = "DATA: "
+	prefixError   = "ERROR: "
+	prefixDone    = "DONE: "
+)
 
 func (t *memoryTracer) Stage(format string, args ...any) {
-	if !t.active {
-		entry := tracerEntry{
-			When:    time.Now(),
-			Message: fmt.Sprintf("STAGE: "+format, args...),
-		}
-		t.guard.Lock()
-		t.active = true
-		t.depth++
-		t.history = append(t.history, entry)
-		t.guard.Unlock()
+	entry := tracerEntry{
+		When:    time.Now(),
+		Message: fmt.Sprintf(prefixStage+format, args...),
 	}
+	t.guard.Lock()
+	t.depth++
+	t.history = append(t.history, entry)
+	t.guard.Unlock()
 }
 
 func (t *memoryTracer) Message(format string, args ...any) {
-	if t.active {
-		entry := tracerEntry{
-			When:    time.Now(),
-			Message: fmt.Sprintf("Msg: "+format, args...),
-		}
-
-		t.guard.Lock()
-		t.history = append(t.history, entry)
-		t.guard.Unlock()
+	entry := tracerEntry{
+		When:    time.Now(),
+		Message: fmt.Sprintf(prefixMessage+format, args...),
 	}
+
+	t.guard.Lock()
+	t.history = append(t.history, entry)
+	t.guard.Unlock()
 }
 
 func (t *memoryTracer) Data(data any, format string, args ...any) {
-	if t.active {
-		entry := tracerEntry{
-			When:    time.Now(),
-			Message: fmt.Sprintf("DATA: "+format, args...),
-		}
-
-		switch actual := data.(type) {
-		case []byte:
-			entry.Data = actual
-		case string:
-			entry.Data = []byte(actual)
-		default:
-			if raw, err := json.Marshal(data); err != nil {
-				entry.Data = []byte(fmt.Sprintf("error while marshalling: %v", err))
-			} else {
-				entry.Data = raw
-			}
-		}
-
-		t.guard.Lock()
-		t.history = append(t.history, entry)
-		t.guard.Unlock()
+	entry := tracerEntry{
+		When:    time.Now(),
+		Message: fmt.Sprintf(prefixData+format, args...),
 	}
+
+	switch actual := data.(type) {
+	case []byte:
+		entry.Data = actual
+	case string:
+		entry.Data = []byte(actual)
+	default:
+		if raw, err := json.Marshal(data); err != nil {
+			entry.Data = []byte(fmt.Sprintf("error while marshalling: %v", err))
+		} else {
+			entry.Data = raw
+		}
+	}
+
+	t.guard.Lock()
+	t.history = append(t.history, entry)
+	t.guard.Unlock()
 }
 
 func (t *memoryTracer) Error(err error, format string, args ...any) {
-	if t.active {
-		entry := tracerEntry{
-			When:    time.Now(),
-			Message: fmt.Sprintf("ERROR: "+format, args...),
-		}
-		entry.Message += fmt.Sprintf(" (error: %v)", err)
-
-		t.guard.Lock()
-		t.history = append(t.history, entry)
-		t.guard.Unlock()
+	entry := tracerEntry{
+		When:    time.Now(),
+		Message: fmt.Sprintf(prefixError+format, args...),
 	}
+	entry.Message += fmt.Sprintf(" (error: %v)", err)
+
+	t.guard.Lock()
+	t.history = append(t.history, entry)
+	t.guard.Unlock()
 }
 
 func (t *memoryTracer) Done(format string, args ...any) {
 	entry := tracerEntry{
 		When:    time.Now(),
-		Message: fmt.Sprintf("DONE: "+format, args...),
+		Message: fmt.Sprintf(prefixDone+format, args...),
 	}
 	t.guard.Lock()
 	t.depth--
@@ -106,17 +110,33 @@ func (t *memoryTracer) Done(format string, args ...any) {
 	if t.depth == 0 {
 		result := t.Render()
 		t.publish(result)
+		removeTracer(t.instance)
 	}
 }
 
 func (t *memoryTracer) Render() []byte {
-	raw, err := json.Marshal(t.history)
+	if len(t.history) > 0 {
+		start := t.history[0].When
+		for index, entry := range t.history {
+			t.history[index].Relative = entry.When.Sub(start).Nanoseconds()
+		}
+	}
+
+	raw, err := json.MarshalIndent(t.history, "", "\t")
 	if err != nil {
 		raw = []byte(fmt.Sprintf("error while marshalling: %v", err))
 	}
 	return raw
 }
 
-func Create() Tracer {
-	return &memoryTracer{}
+func Create(publish PublishFunc) Tracer {
+	instance := getUniqueInstanceID()
+	var result Tracer = &memoryTracer{
+		instance: instance,
+		publish:  publish,
+	}
+
+	addTracer(instance, result)
+
+	return result
 }
