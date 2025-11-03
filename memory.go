@@ -40,6 +40,19 @@ func (t *memoryTracer) Stage(format string, args ...any) {
 	}
 }
 
+func (t *memoryTracer) Message(format string, args ...any) {
+	if t.active {
+		entry := tracerEntry{
+			When:    time.Now(),
+			Message: fmt.Sprintf("Msg: "+format, args...),
+		}
+
+		t.guard.Lock()
+		t.history = append(t.history, entry)
+		t.guard.Unlock()
+	}
+}
+
 func (t *memoryTracer) Data(data any, format string, args ...any) {
 	if t.active {
 		entry := tracerEntry{
@@ -65,6 +78,7 @@ func (t *memoryTracer) Data(data any, format string, args ...any) {
 		t.guard.Unlock()
 	}
 }
+
 func (t *memoryTracer) Error(err error, format string, args ...any) {
 	if t.active {
 		entry := tracerEntry{

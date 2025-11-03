@@ -7,6 +7,7 @@ package tracer
 type blankTracer struct{}
 
 func (*blankTracer) Stage(string, ...any)        {}
+func (*blankTracer) Message(string, ...any)      {}
 func (*blankTracer) Data(any, string, ...any)    {}
 func (*blankTracer) Error(error, string, ...any) {}
 func (*blankTracer) Done(string, ...any)         {}

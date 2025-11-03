@@ -6,6 +6,8 @@ package tracer
 
 type Tracer interface {
 	Stage(string, ...any)
+
+	Message(string, ...any)
 	Data(any, string, ...any)
 	Error(error, string, ...any)
 	Done(string, ...any)
