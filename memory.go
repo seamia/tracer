@@ -17,7 +17,7 @@ type (
 		Relative int64     `json:"relative.ns"`
 		Message  string    `json:"message"`
 		Error    error     `json:"error,omitempty"`
-		Data     []byte    `json:"data,omitempty"`
+		Data     any       `json:"data,omitempty"`
 	}
 
 	traceHistory []tracerEntry
@@ -69,14 +69,15 @@ func (t *memoryTracer) Data(data any, format string, args ...any) {
 
 	switch actual := data.(type) {
 	case []byte:
-		entry.Data = actual
+		entry.Data = actual // Q: is assignment good enough? or shall we copy the data?
 	case string:
-		entry.Data = []byte(actual)
+		entry.Data = actual
 	default:
-		if raw, err := json.Marshal(data); err != nil {
-			entry.Data = []byte(fmt.Sprintf("error while marshalling: %v", err))
+		if raw, err := json.Marshal(actual); err != nil {
+			entry.Data = fmt.Sprintf("failed to save: %T", actual)
+			// entry.Data = []byte(fmt.Sprintf("error while marshalling: %v", err))
 		} else {
-			entry.Data = raw
+			entry.Data = string(raw)
 		}
 	}
 

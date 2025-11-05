@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"sync/atomic"
 	"time"
 )
 
@@ -18,7 +19,16 @@ func FileBasedPublish(location string) PublishFunc {
 	os.MkdirAll(location, 0755)
 
 	return func(data []byte) {
-		fileName := path.Join(location, fmt.Sprintf("trace-%v", time.Now().UnixNano()))
+		fileName := path.Join(location, constructUniqueFileName())
+		fmt.Printf("\t=== %s\n", fileName)
 		os.WriteFile(fileName, data, 0755)
 	}
+}
+
+var (
+	uniqueFileNameCounter int64
+)
+
+func constructUniqueFileName() string {
+	return fmt.Sprintf("trace-%v-%v", time.Now().UnixNano(), atomic.AddInt64(&uniqueFileNameCounter, 1))
 }
